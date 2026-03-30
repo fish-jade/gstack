@@ -160,24 +160,41 @@ async function fetchAndRelayRefs() {
 
 // ─── Inspector ──────────────────────────────────────────────────
 
+// Track inspector mode per tab — 'full' (inspector.js injected) or 'basic' (content.js fallback)
+let inspectorMode = 'full';
+
 async function injectInspector(tabId) {
+  // Try full inspector injection first
   try {
     await chrome.scripting.executeScript({
       target: { tabId, allFrames: true },
       files: ['inspector.js'],
     });
-    await chrome.scripting.insertCSS({
-      target: { tabId, allFrames: true },
-      files: ['inspector.css'],
-    });
-  } catch (err) {
-    return { error: 'Cannot inspect this page (CSP restriction)' };
+    // CSS injection failure alone doesn't need fallback
+    try {
+      await chrome.scripting.insertCSS({
+        target: { tabId, allFrames: true },
+        files: ['inspector.css'],
+      });
+    } catch {}
+    // Send startPicker to the injected inspector.js
+    try {
+      await chrome.tabs.sendMessage(tabId, { type: 'startPicker' });
+    } catch {}
+    inspectorMode = 'full';
+    return { ok: true, mode: 'full' };
+  } catch {
+    // Script injection failed (CSP, chrome:// page, etc.)
+    // Fall back to content.js basic picker (loaded by manifest on most pages)
+    try {
+      await chrome.tabs.sendMessage(tabId, { type: 'startBasicPicker' });
+      inspectorMode = 'basic';
+      return { ok: true, mode: 'basic' };
+    } catch {
+      inspectorMode = 'full';
+      return { error: 'Cannot inspect this page' };
+    }
   }
-  // Send startPicker to all frames
-  try {
-    await chrome.tabs.sendMessage(tabId, { type: 'startPicker' });
-  } catch {}
-  return { ok: true };
 }
 
 async function stopInspector(tabId) {
@@ -236,7 +253,11 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
   const ALLOWED_TYPES = new Set([
     'getPort', 'setPort', 'getServerUrl', 'fetchRefs',
-    'openSidePanel', 'command', 'sidebar-command'
+    'openSidePanel', 'command', 'sidebar-command',
+    // Inspector message types
+    'startInspector', 'stopInspector', 'elementPicked', 'pickerCancelled',
+    'applyStyle', 'toggleClass', 'injectCSS', 'resetAll',
+    'inspectResult'
   ]);
   if (!ALLOWED_TYPES.has(msg.type)) {
     console.warn('[gstack] Rejected unknown message type:', msg.type);
