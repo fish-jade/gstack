@@ -270,6 +270,11 @@ already landed on main. Your entry goes on top because your branch lands next.
 - Is your entry the topmost entry in CHANGELOG (above main's latest)?
 If any answer is no, fix it before continuing.
 
+**After any CHANGELOG edit that moves, adds, or removes entries,** immediately run
+`grep "^## \[" CHANGELOG.md` and verify the full version sequence is contiguous
+with no gaps or duplicates before committing. If a version is missing, the edit
+broke something. Fix it before moving on.
+
 CHANGELOG.md is **for users**, not contributors. Write it like product release notes:
 
 - Lead with what the user can now **do** that they couldn't before. Sell the feature.
